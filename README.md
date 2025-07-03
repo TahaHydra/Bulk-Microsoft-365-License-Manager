@@ -1,99 +1,142 @@
-# Bulk Microsoft 365 License Manager (PowerShell + Microsoft Graph SDK)
+# 💼 Microsoft 365 License Bulk Management Script
 
-This PowerShell script allows you to **bulk add or remove Microsoft 365 licenses** to users by reading their usernames from a `.txt` file. It uses the **Microsoft Graph SDK**, ensuring modern, secure, and compliant access to M365 resources.
-
----
-
-## 🚀 Features
-
-- ✅ Reads users from a simple `users.txt` file  
-- 🔍 Checks if users exist or are deleted in Microsoft 365  
-- 🔐 Lists current licenses and available licenses for each user  
-- ➕ Adds licenses via prompt  
-- ➖ Removes licenses via prompt  
-- 🛑 Option to skip or exit per user  
-- 🔁 Iterates through all users in a loop  
-- 🧠 Intelligent handling of deleted or non-existent users  
+A PowerShell script to **add or remove Microsoft 365 licenses** from users in bulk or individually, using Microsoft Graph PowerShell SDK. It supports logging and flexible interaction per user.
 
 ---
 
-## 📦 Prerequisites
+## ⚙️ Features
 
-- PowerShell 7.2 or later  
-- Microsoft Graph PowerShell SDK:
+- ✅ Bulk or Interactive (one-by-one) mode
+- ✅ Add or remove licenses dynamically
+- ✅ Skips empty or invalid users from input
+- ✅ Logs all actions per user in a timestamped log file
+- ✅ Returns to main menu after each operation set
+
+---
+
+## 📁 Prerequisites
+
+- PowerShell 7+ (recommended)
+- Microsoft Graph PowerShell SDK  
+  Install via:
   ```powershell
   Install-Module Microsoft.Graph -Scope CurrentUser
   ```
-- Required Graph API permissions:
-  - `User.ReadWrite.All`
-  - `Directory.Read.All`
-  - `Organization.Read.All`
-
-> 🔐 Admin consent is required to grant these scopes.
 
 ---
 
-## 📁 File Structure
+## 📂 Files
 
-- `bulk_license_script.ps1`: Main script  
-- `users.txt`: Plaintext file with one UPN/email per line  
+- `users.txt` – A plain text file listing UPNs (user@domain.com), one per line
+- `license_script.ps1` – The main script
+- `license_script_log_<timestamp>.txt` – Output log file (auto-generated)
 
-Example `users.txt`:
+---
+
+## 📜 Usage
+
+### 1. Prepare `users.txt`
+Example:
 ```
-user1@domain.com
-user2@domain.com
+john.doe@contoso.com
+jane.smith@contoso.com
+```
+
+### 2. Run the script
+```powershell
+.\license_script.ps1
+```
+
+### 3. Choose Mode
+You'll be prompted:
+```
+Choose mode: Bulk (B), Individual (I), or Exit (E)? (B/I/E)
 ```
 
 ---
 
-## 🛠️ Usage
+## 🔁 Bulk Mode
 
-1. **Prepare your user list**:  
-   Add users to `users.txt`, one per line.
+Select one license to apply to **all users** in the list.
 
-2. **Run the script**:
-   ```powershell
-   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-   .\bulk_license_script.ps1
-   ```
+- **Add**: Adds license to users who don’t already have it
+- **Remove**: Removes license from users who already have it
 
-3. **Interact per user**:  
-   The script will walk you through each user found and allow you to:
-   - Add licenses
-   - Remove licenses
-   - Skip the user
-   - Exit early
+You will be prompted like:
+```
+Bulk Action: Add (A) or Remove (R)? (A/R)
+Enter the number of the license
+```
 
 ---
 
-## 🧠 Why This Script Is Better
+## 👤 Individual Mode
 
-| Feature                             | This Script                   | Classic CSV Methods           | Admin Center Manual           |
-|------------------------------------|-------------------------------|-------------------------------|-------------------------------|
-| Interactive License Management     | ✅ Yes                         | ❌ Static Only                 | ✅ But time-consuming          |
-| Handles Deleted Users              | ✅ Yes                         | ❌ No                          | ❌ No                          |
-| Graph API Compliance               | ✅ Yes                         | ❌ Often Legacy Cmdlets        | ✅ GUI only                    |
-| Flexible Actions Per User          | ✅ Yes (A/R/S/E)               | ❌ Bulk Only                   | ✅ Manual                      |
-| No Need to Modify Scripts per Run  | ✅ Reads users from `.txt`     | ❌ Often hardcoded             | ❌ Not applicable              |
-| Supports Logging / Logging Ready   | 🔜 Easy to add with `Transcript` | ❌ Harder to trace            | ❌ No Export                   |
+Processes **each user one by one** with options to:
 
----
+- Add license
+- Remove license
+- Skip user
+- Exit script
 
-## 🧱 Customization Ideas
-
-- 🔁 Convert prompts to automatic CSV-based decisions  
-- 📊 Add logging of actions to CSV or file  
-- 🧪 Add unit testing for license assignment logic  
-- 🧭 Support CSV with license actions included per user  
+Example prompt:
+```
+Do you want to (A)dd, (R)emove licenses, (S)kip user or (E)xit? (A/R/S/E)
+```
 
 ---
 
-## 📜 License
+## 🪵 Logging
 
-This script is provided under the MIT License. Feel free to fork, adapt, and improve it.
+All actions are logged in a file named like:
+
+```
+license_script_log_20250703_103500.txt
+```
+
+Contents include:
+- User being processed
+- License added or removed
+- Errors or skipped users
 
 ---
 
-## 👨‍💻 Author
+## 🔐 Permissions Required
 
-Made with ❤️ by [Taha Laachari](mailto:taha.laachari@outlook.com)
+The script connects with:
+
+```powershell
+Connect-MgGraph -Scopes User.ReadWrite.All, Organization.Read.All, Directory.Read.All
+```
+
+Your account must be granted sufficient Microsoft Graph permissions.
+
+---
+
+## 🚫 Notes
+
+- Users not found in Entra ID are skipped (with deleted user check)
+- Input is sanitized: trims empty lines and whitespace from `users.txt`
+- Invalid actions or input errors won’t crash the script
+
+---
+
+## 🧪 Example Run
+
+```
+Choose mode: Bulk (B), Individual (I), or Exit (E)? (B/I/E): B
+Bulk Action: Add (A) or Remove (R)? (A/R): A
+Available licenses:
+1 - ENTERPRISEPACK
+2 - EMS
+Enter the number of the license: 1
+Processing user: john.doe@contoso.com
+License added to john.doe@contoso.com
+...
+```
+
+---
+
+## 📄 License
+
+MIT License
