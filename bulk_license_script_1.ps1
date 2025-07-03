@@ -1,4 +1,5 @@
-# Bulk Add/Remove Microsoft 365 Licenses from TXT input
+# Bulk Add/Remove Microsoft 365 Licenses from TXT input with Bulk/Individual Modes and Logging
+
 # Connect to Microsoft Graph
 Connect-MgGraph -Scopes User.ReadWrite.All, Organization.Read.All, Directory.Read.All
 
@@ -8,80 +9,131 @@ $licenses = Get-MgSubscribedSku
 # Load users from TXT file
 $userList = Get-Content -Path "users.txt"
 
-foreach ($user in $userList) {
-    Write-Host "Processing user: $user" -ForegroundColor Cyan
+# Logging setup
+$logPath = "license_script_log_$(Get-Date -Format 'yyyyMMdd_HHmmss').txt"
 
-    # Check if user exists
-    $mgUser = Get-MgUser -UserId $user -ErrorAction SilentlyContinue
+function Log-Action($message) {
+    $message | Out-File -FilePath $logPath -Append
+}
 
-    if (!$mgUser) {
-        # Check if user exists in deleted users (no -Filter param, filter in PowerShell)
-        $deletedUsers = Get-MgDirectoryDeletedUser -All
-        $deletedMatch = $deletedUsers | Where-Object { $_.UserPrincipalName -eq $user }
-        if ($deletedMatch) {
-            Write-Host "User $user is in deleted users." -ForegroundColor Red
-        } else {
-            Write-Host "User $user cannot be found and is not in deleted users." -ForegroundColor Red
-        }
-        if ($user -eq $userList[-1]) {
-            Write-Host "User $user was the last in the list. Exiting program." -ForegroundColor Magenta
-            break
-        }
-        continue
+$mode = Read-Host "Choose mode: Bulk (B) or Individual (I)? (B/I)"
+
+if ($mode -eq 'B') {
+    $action = Read-Host "Bulk Action: Add (A) or Remove (R)? (A/R)"
+
+    Write-Host "Available licenses:" -ForegroundColor Cyan
+    for ($i = 0; $i -lt $licenses.Count; $i++) {
+        Write-Host "$($i + 1) - $($licenses[$i].SkuPartNumber)"
     }
 
-    # Fetch current licenses
-    $currentLicenses = Get-MgUserLicenseDetail -UserId $user
+    $choice = [int](Read-Host "Enter the number of the license") - 1
+    $skuId = $licenses[$choice].SkuId
 
-    if ($currentLicenses.Count -eq 0) {
-        Write-Host "User $user exists but has no licenses." -ForegroundColor Yellow
-    } else {
-        Write-Host "Current licenses for ${user}:" -ForegroundColor Yellow
-        $licenseArray = @()
-        $i = 1
+    foreach ($user in $userList) {
+        Write-Host "Processing user: $user" -ForegroundColor Cyan
+        Log-Action "Processing user: $user"
 
-        foreach ($lic in $currentLicenses) {
-            $sku = $licenses | Where-Object SkuId -eq $lic.SkuId
-            Write-Host "$i - $($sku.SkuPartNumber)"
-            $licenseArray += $lic.SkuId
-            $i++
+        $mgUser = Get-MgUser -UserId $user -ErrorAction SilentlyContinue
+
+        if (!$mgUser) {
+            Write-Host "User $user not found." -ForegroundColor Red
+            Log-Action "User $user not found."
+            continue
+        }
+
+        $currentLicenses = Get-MgUserLicenseDetail -UserId $user
+        $hasLicense = $currentLicenses | Where-Object { $_.SkuId -eq $skuId }
+
+        if ($action -eq 'A' -and !$hasLicense) {
+            Set-MgUserLicense -UserId $user -AddLicenses @(@{SkuId = $skuId}) -RemoveLicenses @()
+            Write-Host "License added to $user" -ForegroundColor Green
+            Log-Action "License added to $user"
+        }
+        elseif ($action -eq 'R' -and $hasLicense) {
+            Set-MgUserLicense -UserId $user -AddLicenses @() -RemoveLicenses @($skuId)
+            Write-Host "License removed from $user" -ForegroundColor Green
+            Log-Action "License removed from $user"
+        }
+        else {
+            Write-Host "No action needed for $user." -ForegroundColor Yellow
+            Log-Action "No action needed for $user."
         }
     }
+}
 
-    $action = Read-Host "Do you want to (A)dd, (R)emove licenses, (S)kip user or (E)xit? (A/R/S/E)"
+elseif ($mode -eq 'I') {
+    foreach ($user in $userList) {
+        do {
+            Write-Host "Processing user: $user" -ForegroundColor Cyan
+            Log-Action "Processing user: $user"
 
-    if ($action -eq 'A') {
-        Write-Host "Available licenses:"
-        $j = 1
-        foreach ($lic in $licenses) {
-            Write-Host "$j - $($lic.SkuPartNumber)"
-            $j++
-        }
-        $choice = [int](Read-Host "Enter the number of the license to add") - 1
-        $skuId = $licenses[$choice].SkuId
+            $mgUser = Get-MgUser -UserId $user -ErrorAction SilentlyContinue
 
-        Set-MgUserLicense -UserId $user -AddLicenses @(@{SkuId = $skuId}) -RemoveLicenses @()
-        Write-Host "License added to ${user}" -ForegroundColor Green
+            if (!$mgUser) {
+                Write-Host "User $user not found." -ForegroundColor Red
+                Log-Action "User $user not found."
+                break
+            }
 
-    } elseif ($action -eq 'R' -and $currentLicenses.Count -gt 0) {
-        $choice = [int](Read-Host "Enter the number of the license to remove") - 1
-        $skuId = $licenseArray[$choice]
+            $currentLicenses = Get-MgUserLicenseDetail -UserId $user
 
-        Set-MgUserLicense -UserId $user -AddLicenses @() -RemoveLicenses @($skuId)
-        Write-Host "License removed from ${user}" -ForegroundColor Green
+            if ($currentLicenses.Count -eq 0) {
+                Write-Host "User $user has no licenses." -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "Current licenses for ${user}:" -ForegroundColor Yellow
+                $licenseArray = @()
+                for ($i = 0; $i -lt $currentLicenses.Count; $i++) {
+                    $sku = $licenses | Where-Object SkuId -eq $currentLicenses[$i].SkuId
+                    Write-Host "$($i + 1) - $($sku.SkuPartNumber)"
+                    $licenseArray += $currentLicenses[$i].SkuId
+                }
+            }
 
-    } elseif ($action -eq 'R' -and $currentLicenses.Count -eq 0) {
-        Write-Host "Cannot remove licenses from user $user as no licenses are assigned." -ForegroundColor Red
+            $action = Read-Host "Do you want to (A)dd, (R)emove licenses, (S)kip user or (E)xit? (A/R/S/E)"
 
-    } elseif ($action -eq 'E') {
-        Write-Host "Exiting script as requested." -ForegroundColor Magenta
-        break
+            if ($action -eq 'A') {
+                Write-Host "Available licenses:" -ForegroundColor Cyan
+                for ($j = 0; $j -lt $licenses.Count; $j++) {
+                    Write-Host "$($j + 1) - $($licenses[$j].SkuPartNumber)"
+                }
+                $choice = [int](Read-Host "Enter the number of the license to add") - 1
+                $skuId = $licenses[$choice].SkuId
 
-    } elseif ($action -eq 'S') {
-        Write-Host "Skipping user ${user} as requested." -ForegroundColor Blue
-        continue
+                Set-MgUserLicense -UserId $user -AddLicenses @(@{SkuId = $skuId}) -RemoveLicenses @()
+                Write-Host "License added to $user" -ForegroundColor Green
+                Log-Action "License added to $user"
+
+            } elseif ($action -eq 'R' -and $currentLicenses.Count -gt 0) {
+                $choice = [int](Read-Host "Enter the number of the license to remove") - 1
+                $skuId = $licenseArray[$choice]
+
+                Set-MgUserLicense -UserId $user -AddLicenses @() -RemoveLicenses @($skuId)
+                Write-Host "License removed from $user" -ForegroundColor Green
+                Log-Action "License removed from $user"
+
+            } elseif ($action -eq 'R' -and $currentLicenses.Count -eq 0) {
+                Write-Host "User $user has no licenses to remove." -ForegroundColor Red
+                Log-Action "User $user has no licenses to remove."
+
+            } elseif ($action -eq 'S') {
+                Write-Host "Skipping user $user." -ForegroundColor Blue
+                Log-Action "Skipped user $user."
+                break
+
+            } elseif ($action -eq 'E') {
+                Write-Host "Exiting script as requested." -ForegroundColor Magenta
+                Log-Action "Script exited by user."
+                exit
+
+            } else {
+                Write-Host "Invalid action chosen." -ForegroundColor Red
+            }
+
+        } while ($true)
     }
-    else {
-        Write-Host "Invalid action chosen." -ForegroundColor Red
-    }
+}
+else {
+    Write-Host "Invalid mode selected. Exiting script." -ForegroundColor Red
+    Log-Action "Invalid mode selected. Script exited."
 }
